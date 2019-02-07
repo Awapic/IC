@@ -17,7 +17,7 @@ The base requirement for the calculation of these measures is a layer of urban b
 
 Interface catchment (IC) is a measure of the total length of public-private interfaces within a given walking distance (Pafka and Dovey 2017). The difference between IC and other catchment metrics is that it also accounts for the street width. IC looks at which edges of urban blocks may be accessed from a given starting point within a maximum walking distance. The assumption here is that a person is able to walk through any open space that is not occupied by urban blocks.
 
-The IC tool requires the following parameters to be set (Figure 3):
+The IC tool requires the following parameters to be set (Figure 1):
 - *Blocks layer* - A layer containing the urban blocks for which the IC will be calculated. This layer can have polygon geometries, or linear geometries where outlines of urban blocks are represented as closed polylines.
 - *Dead-end removal* - A parameter that specifies if the dead-end streets should be removed from blocks prior to calculating IC, and the maximum width of the dead-end streets to be removed. Per default this option is disabled, as IC is meant to measure all attractions within walking distance, including attractions located in dead-ends. For an explanation of the dead-end removal process see Section “dead-end removal” above.
 - *Starting point* - A starting point from which the IC calculation will commence is required. This starting point can be set in one of three ways:
@@ -30,17 +30,7 @@ The IC tool requires the following parameters to be set (Figure 3):
 
 ![IC GUI](./figures/IC-gui.png)
 
-Figure 3: IC plugin intefrace
-
-## Blocks intersecting the boundary
-Whether the blocks which are partly inside and partly outside of the area of interest should be considered in this calculation, would depend on the specifics of each research. The tool provides three options:
-- *Include if at least some percentage of the block area is inside* - Only the blocks for which more than a specified percentage of their area is inside the area of interest will be included in the AwaP calculation, others will be disregarded (Figure 2a). The default value is 50%.
-- *Always include* - All the blocks that are at least partly within the area of interest will be included in the AwaP calculation (Figure 2b).
-- *Always exclude* - Only the blocks that are entirely within the area of interest will be included in the AwaP calculation (Figure 2c).
-
-![AwaP-frame](./figures/AwaP-frame.png)
-
-Figure 2: Examples of the urban blocks included in the AwaP calculation (dark red) when using different settings for blocks intersecting the study area boundary (black line).
+Figure 1: IC plugin intefrace
 
 #### Reference:
 Pafka E & Dovey K. (2017) [Permeability and Interface Catchment: Measuring and Mapping Walkable Access](https://www.researchgate.net/publication/306087166_Permeability_and_interface_catchment_measuring_and_mapping_walkable_access). Journal of Urbanism 10(2): 150-162.
