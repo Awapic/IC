@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/plugins/interfacecatchment" >
+        <file>icon.png</file>
+    </qresource>
+</RCC>
