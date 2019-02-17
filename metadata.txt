@@ -10,7 +10,7 @@
 name=Interface Catchment
 qgisMinimumVersion=3.0
 description=Calculates the interface catchment on urban blocks within a specified walking distance.
-version=1.0
+version=1.1
 author=Ivan Majic
 email=imajicos@gmail.com
 
