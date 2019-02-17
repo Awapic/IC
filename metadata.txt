@@ -26,7 +26,7 @@ repository=https://github.com/Awapic/IC
 # changelog=
 
 # Tags are comma separated with spaces allowed
-tags=walkability, interface catchment, urban morphology, street network
+tags=walkability, IC, interface catchment, urban morphology, street network
 
 homepage=https://github.com/Awapic/IC
 category=Plugins
