@@ -9,7 +9,6 @@ IC calculates the total length of public/private interfaces reachable from a sta
 The base requirement for the calculation of these measures is a layer of urban blocks drawn as polygons, or closed polylines. Lines within the blocks, such as lot subdivisions, will be ignored. However other errors in the urban blocks layer may not be recognised by the software, and may lead to errors, or long processing times. As both AwaP and IC are calculated in metres, a projected coordinate system should be used in the QGIS project. Instead of the very common WGS84 - EPSG:4326 which uses degrees as a unit for distance, the projected WGS84/Pseudo-Mercator - EPSG:3857 which measures distances in metres may be used.
 
 # IC tool
-[Download plugin zip](https://github.com/Awapic/IC/raw/master/interfacecatchment.zip)
 
 Interface catchment (IC) is a measure of the total length of public-private interfaces within a given walking distance (Pafka and Dovey 2017). The difference between IC and other catchment metrics is that it also accounts for the street width. IC looks at which edges of urban blocks may be accessed from a given starting point within a maximum walking distance. The assumption here is that a person is able to walk through any open space that is not occupied by urban blocks.
 
@@ -26,7 +25,7 @@ The IC tool requires the following parameters to be set (Figure 1):
 
 ![IC GUI](./figures/IC-gui.png)
 
-Figure 1: IC plugin intefrace
+Figure 1: IC plugin interface
 
 #### Reference:
 Pafka E & Dovey K. (2017) [Permeability and Interface Catchment: Measuring and Mapping Walkable Access](https://www.researchgate.net/publication/306087166_Permeability_and_interface_catchment_measuring_and_mapping_walkable_access). Journal of Urbanism 10(2): 150-162.
