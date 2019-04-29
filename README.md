@@ -28,6 +28,8 @@ The IC tool requires the following parameters to be set (Figure 1):
 Figure 1: IC plugin interface
 
 #### Reference:
+Majic I. & Pafka E. (2019) [AwaP-IC - An Open-Source GIS Tool for Measuring Walkable Access](https://doi.org/10.3390/urbansci3020048). Urban Science 3(2): 48.
+
 Pafka E & Dovey K. (2017) [Permeability and Interface Catchment: Measuring and Mapping Walkable Access](https://www.researchgate.net/publication/306087166_Permeability_and_interface_catchment_measuring_and_mapping_walkable_access). Journal of Urbanism 10(2): 150-162.
 
 #### Acknowledgement:
