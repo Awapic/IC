@@ -679,7 +679,7 @@ class InterfaceCatchment:
         for f in dissolved_blocks_layer.getFeatures():
             # I have to buffer in the blocks by a small amount because of
             # the floating point error on the newly created points
-            blocks_geom = f.geometry().buffer(-0.000000001, 360)
+            blocks_geom = f.geometry().buffer(-0.05, 360)
 
         # First I need to take in the layer with existing points
         for starting_point in self.starting_point_layer.getFeatures():
