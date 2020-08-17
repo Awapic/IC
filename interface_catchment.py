@@ -37,6 +37,7 @@ from .interface_catchment_dialog import InterfaceCatchmentDialog
 import os.path
 import processing
 from osgeo import ogr, osr
+from math import isnan
 
 # import ptvsd
 import time
@@ -73,7 +74,7 @@ class InterfaceCatchment:
                 QCoreApplication.installTranslator(self.translator)
 
         # Create the dialog (after translation) and keep reference
-        self.dlg = InterfaceCatchmentDialog()
+        self.dlg = InterfaceCatchmentDialog(parent=self.iface.mainWindow())
 
         # Declare instance attributes
         self.actions = []
@@ -92,6 +93,8 @@ class InterfaceCatchment:
 
         # this is where I define what the ok and cancel buttons do
         self.dlg.button_box.accepted.connect(self.execute)
+        # self.dlg.button_box.accepted.connect(self.task)
+        # self.dlg.button_box.accepted.connect(self.execute_task)
         self.dlg.button_box.rejected.connect(self.close_dialog)
 
         # this is where I connect the starting point layer combobox to
@@ -340,7 +343,7 @@ class InterfaceCatchment:
             added_layer.renderer().symbol().setWidth(width)
         added_layer.triggerRepaint()
         self.iface.layerTreeView().refreshLayerSymbology(added_layer.id())
-        # self.log('Added layer "%s" with color: %s, width: %s to the map.' %(layer.sourceName(),color,width))
+        self.log('Added layer "%s" with color: %s, width: %s to the map.' %(layer.sourceName(),color,width))
 
     def execute(self):
         """This is where I execute all my code - the real plugin that does the
@@ -348,7 +351,7 @@ class InterfaceCatchment:
 
         starttime = time.time()
 
-        # self.log('INTERFACECATCHMENT PLUGIN STARTED')
+        self.log('INTERFACECATCHMENT PLUGIN STARTED')
         # abort parameter for stopping function in loop execution
         self.abort = False
 
@@ -357,25 +360,25 @@ class InterfaceCatchment:
 
         # THIS IS WHERE I GET THE PARAMETERS FROM THE PLUGIN DIALOG
         self.blocks_layer = self.dlg.mMapLayerComboBox.currentLayer()
-        # self.log('blocks_layer = %s' %self.blocks_layer.sourceName())
+        self.log('blocks_layer = %s' %self.blocks_layer.sourceName())
 
         self.starting_point_layer = self.dlg.mMapLayerComboBox_2.currentLayer()
-        # self.log('starting_point_layer = %s' %self.starting_point_layer.sourceName())
+        self.log('starting_point_layer = %s' %self.starting_point_layer.sourceName())
 
         self.walking_distance = self.dlg.mQgsDoubleSpinBox.value()
-        # self.log('walking distance = %s' %self.walking_distance)
+        self.log('walking distance = %s' %self.walking_distance)
 
         self.deadend_solution = self.dlg.checkBox.checkState()
-        # self.log('deadend solution enabled: %s' %self.deadend_solution)
+        self.log('deadend solution enabled: %s' %self.deadend_solution)
 
         self.buffering_distance = self.dlg.mQgsDoubleSpinBox_2.value()/2
 
         self.x_coordinate = float(self.dlg.lineEdit.text())
         self.y_coordinate = float(self.dlg.lineEdit_2.text())
-        # self.log('starting point coordinates: x = %s, y = %s' %(self.x_coordinate, self.y_coordinate))
+        self.log('starting point coordinates: x = %s, y = %s' %(self.x_coordinate, self.y_coordinate))
 
         self.project_crs = self.canvas.mapSettings().destinationCrs().authid()
-        # self.log('The plugin is working on the project CRS: %s' %self.project_crs)
+        self.log('The plugin is working on the project CRS: %s' %self.project_crs)
 
         # Preliminary fix the blocks layer
         self.blocks_layer = processing.run(
@@ -386,7 +389,7 @@ class InterfaceCatchment:
             }
         )['OUTPUT']
 
-        # REPROJECT both boundary and sp layers
+        # REPROJECT both blocks and sp layers
         self.blocks_layer = processing.run(
             'qgis:reprojectlayer',
             {
@@ -459,7 +462,7 @@ class InterfaceCatchment:
 
         # check if the blocks layer == lines
         if self.blocks_layer.geometryType() == 1:
-            pathlinestopols = processing.run(
+            self.blocks_layer = processing.run(
                 'qgis:linestopolygons',
                 {
                     'INPUT': self.blocks_layer,
@@ -468,49 +471,49 @@ class InterfaceCatchment:
             )['OUTPUT']
 
 
-            # fix the created polygons by using the fix geometries processing
-            # algorithm
-            fixedgeometries = processing.run(
-                'qgis:fixgeometries',
-                {
-                    'INPUT': pathlinestopols,
-                    'OUTPUT': 'memory:',
-                }
-            )['OUTPUT']
+        # fix the polygons by using the fix geometries processing
+        # algorithm
+        fixedgeometries = processing.run(
+            'qgis:fixgeometries',
+            {
+                'INPUT': self.blocks_layer,
+                'OUTPUT': 'memory:',
+            }
+        )['OUTPUT']
 
 
-            # dissolve the created polygons in order to make touching polyigons
-            # into one block
-            pathdissolve = processing.run(
-                'qgis:dissolve',
-                {
-                    'INPUT': fixedgeometries,
-                    'OUTPUT': 'memory:',
-                }
-            )['OUTPUT']
+        # dissolve the created polygons in order to make touching polygons
+        # into one block
+        pathdissolve = processing.run(
+            'qgis:dissolve',
+            {
+                'INPUT': fixedgeometries,
+                'OUTPUT': 'memory:',
+            }
+        )['OUTPUT']
 
 
-            # convert dissolve result from multipart to singleparts
-            self.blocks_layer = processing.run(
-                'qgis:multiparttosingleparts',
-                {
-                    'INPUT': pathdissolve,
-                    'OUTPUT': 'memory:',
-                }
-            )['OUTPUT']
+        # convert dissolve result from multipart to singleparts
+        self.blocks_layer = processing.run(
+            'qgis:multiparttosingleparts',
+            {
+                'INPUT': pathdissolve,
+                'OUTPUT': 'memory:',
+            }
+        )['OUTPUT']
 
         
-        else:
-            # blocks layer are polygons, just fix them
-            fixed_blocks_layer = processing.run(
-                'qgis:fixgeometries',
-                {
-                    'INPUT': self.blocks_layer,
-                    'OUTPUT': 'memory:',
-                },
-                feedback = QgsProcessingFeedback(),
-            )
-            self.blocks_layer = fixed_blocks_layer['OUTPUT']
+        # else:
+        #     # blocks layer are polygons, just fix them
+        #     fixed_blocks_layer = processing.run(
+        #         'qgis:fixgeometries',
+        #         {
+        #             'INPUT': self.blocks_layer,
+        #             'OUTPUT': 'memory:',
+        #         },
+        #         feedback = QgsProcessingFeedback(),
+        #     )
+        #     self.blocks_layer = fixed_blocks_layer['OUTPUT']
 
 
         # see if the deadend solution has been selected when the plugin was run
@@ -762,7 +765,7 @@ class InterfaceCatchment:
 
 
         iteration += 1
-        # self.log('itaration = %s' %iteration)
+        self.log('itaration = %s' %iteration)
 
         while any( new_vertices_layer.getFeatures( '"iteration" = %s AND "distance" > 0.001' % (iteration-1))):
             for boundary in clipped_boundary_layer.getFeatures():
@@ -865,7 +868,7 @@ class InterfaceCatchment:
                 # new_vertices_layer.updateFields()
 
             iteration += 1
-            # self.log('iteration = %s' %iteration)
+            self.log('iteration = %s' %iteration)
 
             new_vertices_layer.updateFields()
             lines_layer.updateFields()
@@ -891,6 +894,33 @@ class InterfaceCatchment:
             }
         )['OUTPUT']
 
+        # first calculate the lengths of all lines representing IC result
+        walkable_lines_layer = processing.run(
+            'qgis:fieldcalculator',
+            {
+                'INPUT' : walkable_lines_layer,
+                'OUTPUT' : 'memory:IC_reachable',
+                'FIELD_LENGTH' : 20,
+                'GLOBAL' : '',
+                'FIELD_TYPE' : 0,
+                'FIELD_NAME' : 'length',
+                'FORMULA' : '$length',
+                'FIELD_PRECISION' : 3,
+            }
+        )['OUTPUT']
+
+        # check the calculated lengths for "nan" values and replace them
+        layer_provider = walkable_lines_layer.dataProvider()
+        for ic_feature in walkable_lines_layer.getFeatures():
+            length = ic_feature['length']
+            if isnan(length):
+                # replace any nan lengths with calculated ones
+                fid = ic_feature.id()
+                idx = walkable_lines_layer.fields().names().index('length')
+                calculated_length = ic_feature.geometry().length()
+                attr_value={idx:calculated_length}
+                layer_provider.changeAttributeValues({fid : attr_value})
+
         walkable_lines_layer = processing.run(
             'qgis:fieldcalculator',
             {
@@ -900,7 +930,7 @@ class InterfaceCatchment:
                 'GLOBAL' : '',
                 'FIELD_TYPE' : 1,
                 'FIELD_NAME' : 'IC',
-                'FORMULA' : 'sum($length)',
+                'FORMULA' : 'sum("length")',
                 'FIELD_PRECISION' : 1,
             }
         )['OUTPUT']
@@ -930,5 +960,9 @@ class InterfaceCatchment:
         walkable_lines_layer.setName('IC_' + str(IC))
         self.showLayer(walkable_lines_layer, {'color' : 'red', 'width' : 0.75})
 
-        # endtime = time.time()
-        # self.log('%s s' %(endtime-starttime))
+        endtime = time.time()
+        self.log('total running time: %s s' %(endtime-starttime))
+
+    # def execute_task(self):
+    #     task = QgsTask.fromFunction('execute IC plugin', self.execute, onfinished=self.close_dialog)
+    #     QgsApplication.taskManager().addTask(task)
