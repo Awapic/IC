@@ -10,7 +10,7 @@
 name=Interface Catchment
 qgisMinimumVersion=3.0
 description=Calculates the interface catchment on urban blocks within a specified walking distance.
-version=1.3
+version=2.0.0
 author=Ivan Majic
 email=imajicos@gmail.com
 
@@ -23,7 +23,11 @@ repository=https://github.com/Awapic/IC
 # Recommended items:
 
 # Uncomment the following line and add your changelog:
-# changelog=
+changelog=2.0.0
+    - Moved the IC worker to a thread that runs in the background
+    - This should detach the IC calculation from the QGIS GUI and solve the problem where QGIS was unresponsive during IC plugin calculation
+    - Users can now run multiple instances of IC calculation simultaneously
+    - Individual instances of IC calculations can be canceled from the QGIS task manager (usually accessible through the progress bar on the bottom of the QGIS window)
 
 # Tags are comma separated with spaces allowed
 tags=walkability, IC, interface catchment, urban morphology, street network
