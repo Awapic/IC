@@ -39,8 +39,11 @@ import processing
 from osgeo import ogr, osr
 from math import isnan
 
-# import ptvsd
 import time
+
+# from .functions import read_runtime_parameters, worker
+
+from .icworker import ICWorker
 
 _translate = QtCore.QCoreApplication.translate
 
@@ -57,6 +60,7 @@ class InterfaceCatchment:
         """
         # Save reference to the QGIS interface
         self.iface = iface
+        # self.project = QgsProject.instance()
         # initialize plugin directory
         self.plugin_dir = os.path.dirname(__file__)
         # initialize locale
@@ -92,9 +96,9 @@ class InterfaceCatchment:
         self.dlg.mMapLayerComboBox_2.setFilters(point_layers_filter)
 
         # this is where I define what the ok and cancel buttons do
-        self.dlg.button_box.accepted.connect(self.execute)
+        # self.dlg.button_box.accepted.connect(self.execute)
         # self.dlg.button_box.accepted.connect(self.task)
-        # self.dlg.button_box.accepted.connect(self.execute_task)
+        self.dlg.button_box.accepted.connect(self.execute)
         self.dlg.button_box.rejected.connect(self.close_dialog)
 
         # this is where I connect the starting point layer combobox to
@@ -330,8 +334,8 @@ class InterfaceCatchment:
         # show the dialog
         self.dlg.show()
 
-    def log(self, message: str):
-        QgsMessageLog.logMessage(message, 'InterfaceCatchment', level=Qgis.Info)
+    def log(self, message: str, level=Qgis.Info):
+        QgsMessageLog.logMessage(message, 'InterfaceCatchment', level=level)
 
     def showLayer(self, layer, params):
         added_layer = QgsProject.instance().addMapLayer(layer)
@@ -343,626 +347,42 @@ class InterfaceCatchment:
             added_layer.renderer().symbol().setWidth(width)
         added_layer.triggerRepaint()
         self.iface.layerTreeView().refreshLayerSymbology(added_layer.id())
-        self.log('Added layer "%s" with color: %s, width: %s to the map.' %(layer.sourceName(),color,width))
+        # self.log('Added layer "%s" with color: %s, width: %s to the map.' %(layer.sourceName(),color,width))
+
+    def styleLayer(self, added_layer, params):
+        color = params.get('color')
+        width = params.get('width')
+        if color:
+            added_layer.renderer().symbol().setColor(QColor(color))
+        if width:
+            added_layer.renderer().symbol().setWidth(width)
+        added_layer.triggerRepaint()
+        self.iface.layerTreeView().refreshLayerSymbology(added_layer.id())
+        self.log('Added layer "%s" with color: %s, width: %s to the map.' %(added_layer.sourceName(),color,width))
+    
+    def update_task_number_label(self):
+        active_tasks = QgsApplication.taskManager().activeTasks()
+        ic_task_count = sum([1 for t in active_tasks if type(t)==ICWorker])
+        if ic_task_count == 1:
+            self.dlg.label_10.setText(
+                'There is %s IC plugin task running in the background. Please wait!' %ic_task_count
+            )
+        elif ic_task_count == 0:
+            self.dlg.label_10.setText('')
+        elif ic_task_count > 1:
+            self.dlg.label_10.setText(
+                'There are %s IC plugin tasks running in the background. Please wait!' %ic_task_count
+            )
+
+    def delete_task_number_label(self):
+       self.dlg.label_10.setText('')
 
     def execute(self):
-        """This is where I execute all my code - the real plugin that does the
-        work."""
-
-        starttime = time.time()
-
-        self.log('INTERFACECATCHMENT PLUGIN STARTED')
-        # abort parameter for stopping function in loop execution
-        self.abort = False
-
-        # debug parameter for enabling or disabling the debugging with vscode
-        self.debug = True
-
-        # THIS IS WHERE I GET THE PARAMETERS FROM THE PLUGIN DIALOG
-        self.blocks_layer = self.dlg.mMapLayerComboBox.currentLayer()
-        self.log('blocks_layer = %s' %self.blocks_layer.sourceName())
-
-        self.starting_point_layer = self.dlg.mMapLayerComboBox_2.currentLayer()
-        self.log('starting_point_layer = %s' %self.starting_point_layer.sourceName())
-
-        self.walking_distance = self.dlg.mQgsDoubleSpinBox.value()
-        self.log('walking distance = %s' %self.walking_distance)
-
-        self.deadend_solution = self.dlg.checkBox.checkState()
-        self.log('deadend solution enabled: %s' %self.deadend_solution)
-
-        self.buffering_distance = self.dlg.mQgsDoubleSpinBox_2.value()/2
-
-        self.x_coordinate = float(self.dlg.lineEdit.text())
-        self.y_coordinate = float(self.dlg.lineEdit_2.text())
-        self.log('starting point coordinates: x = %s, y = %s' %(self.x_coordinate, self.y_coordinate))
-
-        self.project_crs = self.canvas.mapSettings().destinationCrs().authid()
-        self.log('The plugin is working on the project CRS: %s' %self.project_crs)
-
-        # Preliminary fix the blocks layer
-        self.blocks_layer = processing.run(
-            'qgis:fixgeometries',
-            {
-                'INPUT': self.blocks_layer,
-                'OUTPUT': 'memory:',
-            }
-        )['OUTPUT']
-
-        # REPROJECT both blocks and sp layers
-        self.blocks_layer = processing.run(
-            'qgis:reprojectlayer',
-            {
-                'INPUT': self.blocks_layer,
-                'TARGET_CRS': self.project_crs,
-                'OUTPUT': 'memory:',
-            }
-        )['OUTPUT']
-
-        if self.starting_point_layer:
-            self.starting_point_layer = processing.run(
-                'qgis:reprojectlayer',
-                {
-                    'INPUT': self.starting_point_layer,
-                    'TARGET_CRS': self.project_crs,
-                    'OUTPUT': 'memory:',
-                }
-            )['OUTPUT']
-
-#############################################################################################
-        # HANDLING THE STARTING POINT COORDINATES
-        # Create a new layer that will hold the starting point
-        self.starting_point_layer =  QgsVectorLayer('Point?crs='+self.project_crs,
-                                                  'IC_starting_point' , "memory")
-        # get the data provider of the starting point layer
-        provider = self.starting_point_layer.dataProvider()
-        with edit(self.starting_point_layer):
-            # create the geometry of the starting point
-            starting_pointXY = QgsPointXY(self.x_coordinate, self.y_coordinate)
-            point_geom = QgsGeometry.fromPointXY(starting_pointXY)
-            # Create a new feature with the geometry of the
-            # block and the id, perimeter and area attributes
-            feature = QgsFeature()
-            feature.setGeometry(point_geom)
-            feature.setId(1)
-            provider.addFeatures( [feature] )
-        self.starting_point_layer.updateFields()
-
-        # This is where I make a buffer around the starting point, the size of
-        # a given walking distance
-        walking_buffer_layer = processing.run(
-            'qgis:buffer',
-            {
-                'INPUT' : self.starting_point_layer,
-                'END_CAP_STYLE' : 0,
-                'OUTPUT' : 'memory:buffer',
-                'SEGMENTS' : 360,
-                'MITER_LIMIT' : 2,
-                'DISTANCE' : self.walking_distance,
-                'JOIN_STYLE' : 0,
-                'DISSOLVE' : False
-            }
-        )['OUTPUT']
-
-
-        # this is where I need to select from the blocks layer only those features which intersect with the buffer created above
-        self.blocks_layer = processing.run(
-            'qgis:extractbylocation',
-            {
-                'INPUT' : self.blocks_layer,
-                'PREDICATE' : [0],
-                'INTERSECT' : walking_buffer_layer,
-                'OUTPUT' : 'memory:',
-            }
-        )['OUTPUT']
-
-
-###################################################################
-####### HANDLING THE BLOCKS LAYER
-
-        # check if the blocks layer == lines
-        if self.blocks_layer.geometryType() == 1:
-            self.blocks_layer = processing.run(
-                'qgis:linestopolygons',
-                {
-                    'INPUT': self.blocks_layer,
-                    'OUTPUT': 'memory:',
-                }
-            )['OUTPUT']
-
-
-        # fix the polygons by using the fix geometries processing
-        # algorithm
-        fixedgeometries = processing.run(
-            'qgis:fixgeometries',
-            {
-                'INPUT': self.blocks_layer,
-                'OUTPUT': 'memory:',
-            }
-        )['OUTPUT']
-
-
-        # dissolve the created polygons in order to make touching polygons
-        # into one block
-        pathdissolve = processing.run(
-            'qgis:dissolve',
-            {
-                'INPUT': fixedgeometries,
-                'OUTPUT': 'memory:',
-            }
-        )['OUTPUT']
-
-
-        # convert dissolve result from multipart to singleparts
-        self.blocks_layer = processing.run(
-            'qgis:multiparttosingleparts',
-            {
-                'INPUT': pathdissolve,
-                'OUTPUT': 'memory:',
-            }
-        )['OUTPUT']
-
-        
-        # else:
-        #     # blocks layer are polygons, just fix them
-        #     fixed_blocks_layer = processing.run(
-        #         'qgis:fixgeometries',
-        #         {
-        #             'INPUT': self.blocks_layer,
-        #             'OUTPUT': 'memory:',
-        #         },
-        #         feedback = QgsProcessingFeedback(),
-        #     )
-        #     self.blocks_layer = fixed_blocks_layer['OUTPUT']
-
-
-        # see if the deadend solution has been selected when the plugin was run
-        # if true, run the whole buffering solution for removing deadends from
-        # the results
-        if self.deadend_solution:
-            # first I need to buffer out the blocks by the given distance
-            # amount
-            buffer_out_layer = processing.run(
-                'qgis:buffer',
-                {
-                    'INPUT' : self.blocks_layer,
-                    'END_CAP_STYLE' : 1,
-                    'OUTPUT' : 'memory:',
-                    'SEGMENTS' : 5,
-                    'MITER_LIMIT' : 2,
-                    'DISTANCE' : self.buffering_distance,
-                    'JOIN_STYLE' : 1,
-                    'DISSOLVE' : False
-                }
-            )['OUTPUT']
-
-            # then I need to buffer back in by the same distance amount
-            buffer_in_layer = processing.run(
-                'qgis:buffer',
-                {
-                    'INPUT' : buffer_out_layer,
-                    'END_CAP_STYLE' : 1,
-                    'OUTPUT' : 'memory:',
-                    'SEGMENTS' : 5,
-                    'MITER_LIMIT' : 2,
-                    'DISTANCE' : -self.buffering_distance,
-                    'JOIN_STYLE' : 1,
-                    'DISSOLVE' : False
-                }
-            )['OUTPUT']
-
-            # finally, fill in any wholes that are left in the blocks
-            self.blocks_layer = processing.run(
-                'qgis:deleteholes',
-                {
-                    'INPUT' : buffer_in_layer,
-                    'MIN_AREA' : 0,
-                    'OUTPUT' : 'memory:',
-                }
-            )['OUTPUT']
-
-        # Create a new layer that will hold all the blocks
-        self.final_blocks_layer =  QgsVectorLayer('Polygon?crs='+self.project_crs, 'IC_blocks' , "memory")
-        # get the data provider of the blocks layer
-        provider = self.final_blocks_layer.dataProvider()
-        i = 1
-
-
-        with edit(self.final_blocks_layer):
-            for block in self.blocks_layer.getFeatures():
-                block_geom = block.geometry()
-                # Create a new feature with the geometry of the
-                # block and the id, perimeter and area attributes
-                feature = QgsFeature()
-                feature.setGeometry(block_geom)
-                feature.setId(i)
-                provider.addFeatures( [feature] )
-                i += 1
-        self.final_blocks_layer.updateFields()
-        
-
-
-##########################################
-        # This is where I extract the boundary of the blocks layer in order to
-        # work out the vertices
-        blocks_boundary_layer = processing.run(
-            'qgis:boundary',
-            {
-                'INPUT' : self.blocks_layer,
-                'OUTPUT' : 'memory:boundary',
-            }
-        )['OUTPUT']
-        
-
-        # This is where I clip the boundary layer with the walking distance
-        # buffer
-        clipped_boundary_layer = processing.run(
-            'qgis:clip',
-            {
-                'INPUT' : blocks_boundary_layer,
-                'OVERLAY' : walking_buffer_layer, 
-                'OUTPUT' : 'memory:clip1',
-            }
-        )['OUTPUT']
-        
-
-        clipped_boundary_layer = processing.run(
-            'qgis:advancedpythonfieldcalculator',
-            {
-                'INPUT' : clipped_boundary_layer,
-                'OUTPUT' : 'memory:clip2',
-                'FIELD_LENGTH' : 10,
-                'GLOBAL' : '',
-                'FIELD_TYPE' : 0,
-                'FIELD_NAME' : 'ic_boundary_id',
-                'FORMULA' : 'value = $id',
-                'FIELD_PRECISION' : 1,
-            }
-        )['OUTPUT']
-        
-
-        # This is where I dissolve the blocks layer 
-        dissolved_blocks_layer = processing.run(
-            'qgis:dissolve',
-            {
-                'INPUT' : self.blocks_layer,
-                'OUTPUT' : 'memory:dissolve',
-            }
-        )['OUTPUT']
-        
-
-############################################################################
-######## This is where I will test if the points are visible from the starting
-
-        # Create a new layer that will hold all the lines representing the
-        # walkable portions of the boundaries
-        lines_layer = QgsVectorLayer('Polygon?crs='+self.project_crs,
-                                                  'lines' , "memory")
-        # get the data provider of the lines layer
-        lines_provider = lines_layer.dataProvider()
-        lines_provider.addAttributes(
-            [
-                QgsField('boundary_id', QVariant.Int),
-            ]
-        )
-        lines_layer.updateFields()
-        lines_boundary_id = lines_provider.fieldNameIndex('boundary_id')
-
-
-        # Create a new layer that will hold all the resulting points
-        new_vertices_layer = QgsVectorLayer('Point?crs='+self.project_crs,
-                                                  'IC_vertices' , "memory")
-        # get the data provider of the new vertices layer
-        provider = new_vertices_layer.dataProvider()
-        provider.addAttributes(
-            [
-                QgsField('iteration', QVariant.Int),
-                QgsField('prev_id', QVariant.Int),
-                # QgsField('id', QVariant.Int),
-                QgsField('distance', QVariant.Double),
-                QgsField('boundary_id', QVariant.Int),
-            ]
-        )
-        # Tell vector layer to update fields in order to get the new layers
-        # from data provider
-        new_vertices_layer.updateFields()
-        # Now I need to fetch column numbers of these new attributes for when
-        # I need to update them later on
-        # id_id = provider.fieldNameIndex('id')
-        distance_id = provider.fieldNameIndex('distance')
-        iteration_id = provider.fieldNameIndex('iteration')
-        prev_id_id = provider.fieldNameIndex('prev_id')
-        boundary_id_id = provider.fieldNameIndex('boundary_id')
-        fields = new_vertices_layer.fields()
-
-        iteration = 1
-
-        # Get the feature where all the blocks are dissolved into a single
-        # feature
-        for f in dissolved_blocks_layer.getFeatures():
-            # I have to buffer in the blocks by a small amount because of
-            # the floating point error on the newly created points
-            blocks_geom = f.geometry().buffer(-0.05, 360)
-
-        # First I need to take in the layer with existing points
-        for starting_point in self.starting_point_layer.getFeatures():
-            # take the geometry of the starting point
-            sp_geom = starting_point.geometry()
-            sp_aspoint = sp_geom.asPoint()
-
-            for boundary in clipped_boundary_layer.getFeatures():
-                boundary_geom = boundary.geometry()
-                boundary_id = boundary['ic_boundary_id']
-                boundary_geom.convertToMultiType()
-                intersected_boundaries = boundary_geom.asMultiPolyline()
-
-                writepoints_list = []
-                boundary_points = [sp_aspoint]
-
-                for boundary_line in intersected_boundaries:
-                    for p_geom in boundary_line:
-                        # create a line between the starting point and the vertice
-                        # point
-                        line = QgsLineString(
-                            [p_geom.x(), sp_aspoint.x()],
-                            [p_geom.y(), sp_aspoint.y()]
-                        )
-                        line_geom = QgsGeometry(line)
-                        if not line_geom.crosses(blocks_geom):
-                            distance = self.walking_distance - line_geom.length()
-                            pointarea = QgsRectangle(p_geom.x() - 0.005,p_geom.y() - 0.005,
-                                                    p_geom.x() + 0.005,p_geom.y() + 0.005)
-                            writepoint = True
-                            for point in new_vertices_layer.getFeatures(
-                                QgsFeatureRequest().setFilterRect(pointarea)):
-                                if distance > point['distance']:
-                                    provider.deleteFeatures( [point.id()] )
-                                    new_vertices_layer.updateFields()
-                                else:
-                                    writepoint = False
-                            if writepoint:
-                                feature = QgsFeature(fields)
-                                feature.setGeometry(QgsGeometry(QgsPoint(p_geom)))
-                                feature[distance_id] = distance
-                                feature[iteration_id] = iteration
-                                feature[boundary_id_id] = boundary_id
-                                provider.addFeatures( [feature] )
-                                new_vertices_layer.updateFields()
-
-                            boundary_points.append(p_geom)
-
-                newlines = []
-                for j, p1_geom in enumerate(boundary_points):
-                    for k, p2_geom in enumerate(boundary_points[j+1:]):
-                        line = QgsGeometry(
-                            QgsLineString(
-                                [p1_geom.x(), p2_geom.x()],
-                                [p1_geom.y(), p2_geom.y()]
-                            )
-                                                     )
-                        if line.within(boundary_geom.buffer(0.1, 5)):
-                            newlines.append(line.buffer(0.01, 5, 2, 2, 2))
-                
-                if newlines:
-                    feature = QgsFeature(lines_layer.fields())
-                    walkable_line_geometry = QgsGeometry().unaryUnion(newlines)
-                    boundary_geom = boundary_geom.difference(walkable_line_geometry)
-                    feature.setGeometry(walkable_line_geometry)
-                    feature.setId(boundary_id)
-                    feature[lines_boundary_id] = boundary_id
-                    lines_provider.addFeatures( [feature] )
-
-
-                # # This part is for deleting the vertices that are within the portions of the blocks boundaries that we already know are walkable
-                # delete_features = []
-                # for feature in new_vertices_layer.getFeatures('"iteration" = %s AND "boundary_id" = %s' % (iteration, boundary_id)):
-                #     if feature.geometry().buffer(0.01, 5).disjoint(boundary_geom):
-                #         delete_features.append(feature.id())
-                # provider.deleteFeatures( delete_features )
-                # new_vertices_layer.updateFields()
-
-        lines_layer.updateFields()
-
-
-        iteration += 1
-        self.log('itaration = %s' %iteration)
-
-        while any( new_vertices_layer.getFeatures( '"iteration" = %s AND "distance" > 0.001' % (iteration-1))):
-            for boundary in clipped_boundary_layer.getFeatures():
-                boundary_geom = boundary.geometry()
-                boundary_id = boundary['ic_boundary_id']
-                writepoints_list = []
-                # newlines = []
-                newlines = QgsGeometry()
-                existing_line_features = [l for l in lines_layer.getFeatures('"boundary_id"=%s' %boundary_id)]
-                if len(existing_line_features) == 1:
-                    existing_line = existing_line_features[0]
-                    existing_lines = existing_line.geometry()
-                    # boundary_geom = boundary_geom.difference(existing_lines)
-                else:
-                    existing_lines = QgsGeometry()
-
-                for sp in new_vertices_layer.getFeatures(
-                    '"iteration" = %s AND "distance" > 0.001' % (iteration-1)
-                ):
-                    sp_boundary_id = sp['boundary_id']
-                    sp_distance = sp['distance']
-                    sp_geom = sp.geometry()
-                    sp_buffer = sp_geom.buffer(sp_distance, 180)
-                    sp_aspoint = sp_geom.asPoint()
-
-                    if boundary_geom.intersects(sp_buffer):
-
-                        intersected_boundaries = boundary_geom.intersection(sp_buffer)
-                        intersected_boundaries.convertToMultiType()
-
-                        boundary_points = [sp_aspoint]
-
-                        for boundary_line in intersected_boundaries.asMultiPolyline():
-                            for p_geom in boundary_line:
-                                # create a line between the starting point and the vertice
-                                # point
-                                line = QgsLineString(
-                                    [p_geom.x(), sp_aspoint.x()],
-                                    [p_geom.y(), sp_aspoint.y()]
-                                )
-                                line_geom = QgsGeometry(line)
-                                if not line_geom.crosses(blocks_geom):
-                                    distance = sp_distance - line_geom.length()
-                                    pointarea = QgsRectangle(p_geom.x() - 0.005,p_geom.y() - 0.005,
-                                                            p_geom.x() + 0.005,p_geom.y() + 0.005)
-                                    writepoint = True
-                                    for point in new_vertices_layer.getFeatures(
-                                        QgsFeatureRequest().setFilterRect(pointarea)):
-                                        if distance > point['distance']:
-                                            provider.deleteFeatures( [point.id()] )
-                                            new_vertices_layer.updateFields()
-                                        else:
-                                            writepoint = False
-                                    if writepoint:
-                                        feature = QgsFeature(fields)
-                                        feature.setGeometry(QgsGeometry(QgsPoint(p_geom)))
-                                        feature[distance_id] = distance
-                                        feature[iteration_id] = iteration
-                                        feature[prev_id_id] = sp.id()
-                                        feature[boundary_id_id] = boundary_id
-                                        provider.addFeatures( [feature] )
-                                        new_vertices_layer.updateFields()
-
-                                    boundary_points.append(p_geom)
-
-
-                        for j, p1_geom in enumerate(boundary_points):
-                            for k, p2_geom in enumerate(boundary_points[j+1:]):
-                                line = QgsGeometry(
-                                    QgsLineString(
-                                        [p1_geom.x(), p2_geom.x()],
-                                        [p1_geom.y(), p2_geom.y()]
-                                    )
-                                    )
-                                if line.within(boundary_geom.buffer(0.1, 5)):
-                                    # newlines.append(line.buffer(0.01, 5, 2, 2, 2))
-                                    newlines = QgsGeometry().unaryUnion([newlines, line.buffer(0.01, 5, 2, 2, 2)])
-                
-                walkable_line_geometry = QgsGeometry().unaryUnion( [newlines, existing_lines] )
-                if newlines:
-                    if not existing_lines.isEmpty():
-                        with edit(lines_layer):
-                            lines_layer.changeGeometry(
-                                existing_line.id(),
-                                walkable_line_geometry
-                            )
-                    else:
-                        feature = QgsFeature(lines_layer.fields())
-                        feature.setGeometry(walkable_line_geometry)
-                        feature.setId(boundary_id)
-                        feature[lines_boundary_id] = boundary_id
-                        lines_provider.addFeatures( [feature] )
-
-                # boundary_geom = boundary_geom.difference(walkable_line_geometry)
-                # delete_features = []
-                # for feature in new_vertices_layer.getFeatures('"iteration" = %s AND "boundary_id" = %s' % (iteration, boundary_id)):
-                #     if feature.geometry().buffer(0.01, 5).disjoint(boundary_geom):
-                #         delete_features.append(feature.id())
-                # provider.deleteFeatures( delete_features )
-                # new_vertices_layer.updateFields()
-
-            iteration += 1
-            self.log('iteration = %s' %iteration)
-
-            new_vertices_layer.updateFields()
-            lines_layer.updateFields()
-
-
-        # Fix any invalid geometries made with the lines layer 
-        lines_layer = processing.run(
-            'qgis:fixgeometries',
-            {
-                'INPUT': lines_layer,
-                'OUTPUT': 'memory:',
-            }
-        )['OUTPUT']
-
-        # This is where I clip the boundary layer with the walking distance
-        # buffer
-        walkable_lines_layer = processing.run(
-            'qgis:clip',
-            {
-                'INPUT' : clipped_boundary_layer,
-                'OVERLAY' : lines_layer, 
-                'OUTPUT' : 'memory: IC_reachable',
-            }
-        )['OUTPUT']
-
-        # first calculate the lengths of all lines representing IC result
-        walkable_lines_layer = processing.run(
-            'qgis:fieldcalculator',
-            {
-                'INPUT' : walkable_lines_layer,
-                'OUTPUT' : 'memory:IC_reachable',
-                'FIELD_LENGTH' : 20,
-                'GLOBAL' : '',
-                'FIELD_TYPE' : 0,
-                'FIELD_NAME' : 'length',
-                'FORMULA' : '$length',
-                'FIELD_PRECISION' : 3,
-            }
-        )['OUTPUT']
-
-        # check the calculated lengths for "nan" values and replace them
-        layer_provider = walkable_lines_layer.dataProvider()
-        for ic_feature in walkable_lines_layer.getFeatures():
-            length = ic_feature['length']
-            if isnan(length):
-                # replace any nan lengths with calculated ones
-                fid = ic_feature.id()
-                idx = walkable_lines_layer.fields().names().index('length')
-                calculated_length = ic_feature.geometry().length()
-                attr_value={idx:calculated_length}
-                layer_provider.changeAttributeValues({fid : attr_value})
-
-        walkable_lines_layer = processing.run(
-            'qgis:fieldcalculator',
-            {
-                'INPUT' : walkable_lines_layer,
-                'OUTPUT' : 'memory:IC_reachable',
-                'FIELD_LENGTH' : 20,
-                'GLOBAL' : '',
-                'FIELD_TYPE' : 1,
-                'FIELD_NAME' : 'IC',
-                'FORMULA' : 'sum("length")',
-                'FIELD_PRECISION' : 1,
-            }
-        )['OUTPUT']
-
-        IC = round(next(walkable_lines_layer.getFeatures())['IC'])
-
-        # new_vertices_layer = processing.run(
-        #     'qgis:advancedpythonfieldcalculator',
-        #     {
-        #         'INPUT' : new_vertices_layer,
-        #         'OUTPUT' : 'memory:IC_vertices',
-        #         'FIELD_LENGTH' : 10,
-        #         'GLOBAL' : '',
-        #         'FIELD_TYPE' : 0,
-        #         'FIELD_NAME' : 'id',
-        #         'FORMULA' : 'value = $id',
-        #         'FIELD_PRECISION' : 1,
-        #     }
-        # )['OUTPUT']
-
-        # self.showLayer(walking_buffer_layer, {'color' : 'gray'})
-        # self.showLayer(self.final_blocks_layer, {'color' : 'light gray', 'width' : None})
-        # self.showLayer(new_vertices_layer, {'color' : 'yellow'} )
-        # self.showLayer(lines_layer, {})
-        # self.showLayer(clipped_boundary_layer, {})
-        self.showLayer(self.starting_point_layer, {'color' : 'red', 'width' : None})
-        walkable_lines_layer.setName('IC_' + str(IC))
-        self.showLayer(walkable_lines_layer, {'color' : 'red', 'width' : 0.75})
-
-        endtime = time.time()
-        self.log('total running time: %s s' %(endtime-starttime))
-
-    # def execute_task(self):
-    #     task = QgsTask.fromFunction('execute IC plugin', self.execute, onfinished=self.close_dialog)
-    #     QgsApplication.taskManager().addTask(task)
+        try:
+            myworker = self.myworker = ICWorker(self, 'InterfaceCatchment plugin - %s m' %self.dlg.mQgsDoubleSpinBox.value())
+            myworker.layerPrint.connect(self.showLayer)
+            QgsApplication.taskManager().countActiveTasksChanged.connect(self.update_task_number_label)
+            QgsApplication.taskManager().allTasksFinished.connect(self.delete_task_number_label)
+            QgsApplication.taskManager().addTask(myworker)
+        except Exception as e:
+            self.log(str(e))
