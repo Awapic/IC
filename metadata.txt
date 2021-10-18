@@ -14,7 +14,7 @@ version=2.0.1
 author=Ivan Majic
 email=imajicos@gmail.com
 
-about=This is a plugin for calculating the interface catchment on urban blocks within a specified walking distance. This method was first presented in Pafka E. and Dovey K. (2017), Permeability and interface catchment: measuring and mapping walkable access (https://www.tandfonline.com/doi/abs/10.1080/17549175.2016.1220413); and this plugin is presented in Majic I. and Pafka E. (2019), AwaP-IC - An Open-Source GIS Tool for Measuring Walkable Access (https://www.mdpi.com/2413-8851/3/2/48).
+about=This is a plugin for calculating the interface catchment on urban blocks within a specified walking distance. This method was first presented in Pafka E. and Dovey K. (2017), Permeability and interface catchment: measuring and mapping walkable access (https://www.tandfonline.com/doi/abs/10.1080/17549175.2016.1220413); and this plugin is presented in Majic I. and Pafka E. (2019), AwaP-IC - An Open-Source GIS Tool for Measuring Walkable Access (https://www.mdpi.com/2413-8851/3/2/48). The video tutorial for AwaP is available online (https://vimeo.com/elekpafka/ic).
 
 tracker=https://github.com/Awapic/IC/issues
 repository=https://github.com/Awapic/IC
