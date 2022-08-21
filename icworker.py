@@ -430,7 +430,8 @@ class ICWorker(QgsTask):
                             )
                                                         )
                         if line.within(boundary_geom.buffer(0.1, 5)):
-                            newlines.append(line.buffer(0.01, 5, 2, 2, 2))
+                            # newlines.append(line.buffer(0.01, 5, 2, 2, 2))
+                            newlines.append(line.buffer(0.01, 5))
                 
                 if newlines:
                     feature = QgsFeature(lines_layer.fields())
@@ -528,7 +529,8 @@ class ICWorker(QgsTask):
                                     )
                                 if line.within(boundary_geom.buffer(0.1, 5)):
                                     # newlines.append(line.buffer(0.01, 5, 2, 2, 2))
-                                    newlines = QgsGeometry().unaryUnion([newlines, line.buffer(0.01, 5, 2, 2, 2)])
+                                    # newlines = QgsGeometry().unaryUnion([newlines, line.buffer(0.01, 5, 2, 2, 2)])
+                                    newlines = QgsGeometry().unaryUnion([newlines, line.buffer(0.01, 5)])
                 
                 walkable_line_geometry = QgsGeometry().unaryUnion( [newlines, existing_lines] )
                 if newlines:
