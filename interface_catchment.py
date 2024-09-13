@@ -90,7 +90,7 @@ class InterfaceCatchment:
 ##############################################################################
         # this is where i define that qgsmaplayercombobox should only
         # list line and polygon layers, and point layers in the second one
-        vector_layers_filter = QgsMapLayerProxyModel.Filter(8 | 16)
+        vector_layers_filter = QgsMapLayerProxyModel.LineLayer | QgsMapLayerProxyModel.PolygonLayer
         self.dlg.mMapLayerComboBox.setFilters(vector_layers_filter)
         point_layers_filter = QgsMapLayerProxyModel.Filter(4)
         self.dlg.mMapLayerComboBox_2.setFilters(point_layers_filter)
